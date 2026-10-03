@@ -9,39 +9,95 @@ import {
   type Transport,
 } from "../../../packages/agui/src/index.ts";
 
-// SseParser does an unguarded JSON.parse on each frame's data. These tests document what that
-// means today, for the parser and for Agent.run; they are not a promise that it is the best design.
+// A frame whose data is not valid JSON is skipped, reported through onError, and never costs the
+// valid events around it. Comments, [DONE] and empty data stay silent and are not counted as errors.
 
 const frame = (event: object) => `data: ${JSON.stringify(event)}\n\n`;
 
-test("SseParser throws a SyntaxError from push() when a frame's data is not valid JSON", () => {
-  const parser = new SseParser();
-  assert.throws(() => parser.push("data: {not json}\n\n"), SyntaxError);
-  assert.throws(() => new SseParser().push("data: \n\ndata: {\n\n"), SyntaxError);
-  // A non-JSON word is invalid too; only the literal [DONE] and empty data are skipped.
-  assert.throws(() => new SseParser().push("data: hello\n\n"), SyntaxError);
-  assert.deepEqual(new SseParser().push("data: [DONE]\n\ndata:\n\n: comment\n\n"), []);
+test("SseParser skips a frame that is not valid JSON and reports it", () => {
+  const errors: { error: unknown; data: string }[] = [];
+  const parser = new SseParser((error, data) => errors.push({ error, data }));
+  assert.deepEqual(parser.push("data: {not json}\n\n"), []);
+  assert.deepEqual(parser.push("data: hello\n\n"), []);
+  assert.deepEqual(parser.push("data: \n\ndata: {\n\n"), []);
+  assert.deepEqual(
+    errors.map((entry) => entry.data),
+    ["{not json}", "hello", "{"],
+  );
+  for (const { error } of errors) assert.ok(error instanceof SyntaxError);
+  assert.equal(parser.invalidFrames, 3);
 });
 
-test("SseParser does not parse an incomplete frame, so a split JSON only fails once the frame ends", () => {
+test("SseParser without a handler still skips invalid frames and counts them", () => {
   const parser = new SseParser();
-  assert.deepEqual(parser.push("data: {not "), []);
-  assert.throws(() => parser.push("json}\n\n"), SyntaxError);
+  assert.deepEqual(parser.push(`${frame({ a: 1 })}data: oops\n\n`), [{ a: 1 }]);
+  assert.equal(parser.invalidFrames, 1);
 });
 
-test("after a throw, SseParser has consumed the bad frame and carries on with the next ones", () => {
-  const parser = new SseParser();
-  assert.throws(() => parser.push("data: oops\n\n"), SyntaxError);
-  assert.deepEqual(parser.push(frame({ ok: 1 })), [{ ok: 1 }], "the parser is not poisoned");
+test("[DONE], empty data and comments are neither events nor errors", () => {
+  const errors: string[] = [];
+  const parser = new SseParser((_error, data) => errors.push(data));
+  assert.deepEqual(parser.push("data: [DONE]\n\ndata:\n\n: comment\n\n"), []);
+  assert.deepEqual(errors, []);
+  assert.equal(parser.invalidFrames, 0);
 });
 
-test("oddity: a throwing push() drops the valid events parsed earlier in the same chunk", () => {
-  const parser = new SseParser();
+test("an invalid frame in the middle of a chunk keeps the valid events before and after it", () => {
+  const errors: string[] = [];
+  const parser = new SseParser((_error, data) => errors.push(data));
   const chunk = `${frame({ first: 1 })}data: oops\n\n${frame({ third: 3 })}`;
-  // The first event was already parsed, but push() throws instead of returning it: it is lost.
-  assert.throws(() => parser.push(chunk), SyntaxError);
-  // The frame after the bad one is still in the buffer and is returned by the next push().
-  assert.deepEqual(parser.push(""), [{ third: 3 }]);
+  assert.deepEqual(parser.push(chunk), [{ first: 1 }, { third: 3 }]);
+  assert.deepEqual(errors, ["oops"]);
+  assert.deepEqual(parser.push(""), [], "nothing is left over in the buffer");
+});
+
+test("an invalid frame at the start or at the end of a chunk loses nothing either", () => {
+  const parser = new SseParser();
+  assert.deepEqual(parser.push(`data: oops\n\n${frame({ a: 1 })}${frame({ b: 2 })}`), [
+    { a: 1 },
+    { b: 2 },
+  ]);
+  assert.deepEqual(parser.push(`${frame({ c: 3 })}${frame({ d: 4 })}data: oops\n\n`), [
+    { c: 3 },
+    { d: 4 },
+  ]);
+  assert.equal(parser.invalidFrames, 2);
+});
+
+test("several invalid frames in one chunk are all skipped and all reported", () => {
+  const errors: string[] = [];
+  const parser = new SseParser((_error, data) => errors.push(data));
+  const chunk = `data: x1\n\n${frame({ a: 1 })}data: x2\n\ndata: x3\n\n${frame({ b: 2 })}data: x4\n\n`;
+  assert.deepEqual(parser.push(chunk), [{ a: 1 }, { b: 2 }]);
+  assert.deepEqual(errors, ["x1", "x2", "x3", "x4"]);
+  assert.equal(parser.invalidFrames, 4);
+});
+
+test("a JSON split over two chunks that turns out invalid is skipped when the frame ends", () => {
+  const errors: string[] = [];
+  const parser = new SseParser((_error, data) => errors.push(data));
+  assert.deepEqual(parser.push(`${frame({ a: 1 })}data: {not `), [{ a: 1 }]);
+  assert.deepEqual(errors, [], "an unfinished frame is not parsed yet");
+  assert.deepEqual(parser.push(`json}\n\n${frame({ b: 2 })}`), [{ b: 2 }]);
+  assert.deepEqual(errors, ["{not json}"]);
+});
+
+test("a multi-line invalid frame is reported with its lines joined, CRLF included", () => {
+  const errors: string[] = [];
+  const parser = new SseParser((_error, data) => errors.push(data));
+  assert.deepEqual(parser.push('data: {"a":\r\ndata: oops\r\n\r\n'), []);
+  assert.deepEqual(errors, ['{"a":\noops']);
+});
+
+test("a handler that throws does not bring the loss back", () => {
+  const parser = new SseParser(() => {
+    throw new Error("handler failed");
+  });
+  assert.deepEqual(parser.push(`${frame({ a: 1 })}data: oops\n\n${frame({ b: 2 })}`), [
+    { a: 1 },
+    { b: 2 },
+  ]);
+  assert.equal(parser.invalidFrames, 1);
 });
 
 /** A transport that hands the given chunks to onText, then answers with `status`. */
@@ -52,82 +108,117 @@ const scripted =
     return { status, errorText: "" };
   };
 
-const agentWith = (transport: Transport, url = "https://host.test/run") =>
-  new Agent({ url, threadId: "t", headers: () => ({}), transport });
+const agentWith = (
+  transport: Transport,
+  extra: { url?: string; onInvalidEvent?: (error: unknown, data: string) => void } = {},
+) =>
+  new Agent({
+    url: extra.url ?? "https://host.test/run",
+    threadId: "t",
+    headers: () => ({}),
+    transport,
+    onInvalidEvent: extra.onInvalidEvent,
+  });
 
-test("Agent.run rejects with the SyntaxError on an invalid frame and resets isRunning", async () => {
+const text = (delta: string, first = false) =>
+  frame({
+    type: "TEXT_MESSAGE_CHUNK",
+    messageId: "a",
+    ...(first ? { role: "assistant" } : {}),
+    delta,
+  });
+
+test("Agent.run ignores an invalid frame inside a chunk and finishes with the right messages", async () => {
   const agent = agentWith(
     scripted([
-      frame({ type: "TEXT_MESSAGE_CHUNK", messageId: "a", role: "assistant", delta: "Partial" }),
-      "data: {broken\n\n",
+      frame({ type: "RUN_STARTED" }),
+      `${text("One", true)}data: {broken\n\n${text(" Two")}`,
       frame({ type: "RUN_FINISHED" }),
     ]),
   );
   const running: boolean[] = [];
   agent.subscribe(() => running.push(agent.isRunning));
-  await assert.rejects(agent.run(), (error: unknown) => {
-    assert.ok(error instanceof SyntaxError, "the raw JSON.parse error, not wrapped");
-    assert.notEqual(error.message, "Connection interrupted");
-    return true;
-  });
+  await agent.run();
+  assert.deepEqual(agent.messages as Message[], [
+    { id: "a", role: "assistant", content: "One Two" },
+  ]);
   assert.equal(agent.isRunning, false);
-  // Subscribers saw the run start, the partial reply, and a final notification with isRunning false.
   assert.equal(running[0], true);
   assert.equal(running.at(-1), false);
-  assert.deepEqual(agent.messages as Message[], [
-    { id: "a", role: "assistant", content: "Partial" },
-  ]);
+  assert.equal(agent.invalidEventCount, 1);
 });
 
-test("Agent.run: events in the chunk before the bad frame are lost, earlier chunks are kept", async () => {
-  const chunkOne = frame({
-    type: "TEXT_MESSAGE_CHUNK",
-    messageId: "a",
-    role: "assistant",
-    delta: "One",
-  });
-  const chunkTwo = `${frame({ type: "TEXT_MESSAGE_CHUNK", messageId: "a", delta: " Two" })}data: oops\n\n`;
-  const agent = agentWith(scripted([chunkOne, chunkTwo]));
-  await assert.rejects(agent.run(), SyntaxError);
-  // " Two" arrived in the same chunk as the bad frame, so it never reaches the transcript.
-  assert.deepEqual(agent.messages as Message[], [{ id: "a", role: "assistant", content: "One" }]);
-});
-
-test("Agent.run: a RUN_ERROR seen before the bad frame wins over the SyntaxError", async () => {
+test("Agent reports each invalid frame through onInvalidEvent, with the raw data", async () => {
+  const seen: { error: unknown; data: string }[] = [];
   const agent = agentWith(
-    scripted([frame({ type: "RUN_ERROR", message: "Model failed" }), "data: oops\n\n"]),
+    scripted([
+      `data: nope\n\n${text("Hi", true)}`,
+      `data: {"type":\n\n${frame({ type: "RUN_FINISHED" })}`,
+    ]),
+    { onInvalidEvent: (error, data) => seen.push({ error, data }) },
   );
-  await assert.rejects(agent.run(), /^Error: Model failed$/);
-  assert.equal(agent.isRunning, false);
-});
-
-test("Agent.run can run again after an invalid frame", async () => {
-  let call = 0;
-  const transport: Transport = async (request) => {
-    call++;
-    if (call === 1) request.onText("data: nope\n\n");
-    else request.onText(frame({ type: "RUN_FINISHED" }));
-    return { status: 200, errorText: "" };
-  };
-  const agent = agentWith(transport);
-  await assert.rejects(agent.run(), SyntaxError);
   await agent.run();
-  assert.equal(call, 2);
+  assert.deepEqual(
+    seen.map((entry) => entry.data),
+    ["nope", '{"type":'],
+  );
+  for (const { error } of seen) assert.ok(error instanceof SyntaxError);
+  assert.equal(agent.invalidEventCount, 2);
+  assert.equal((agent.messages[0] as { content: string }).content, "Hi");
+});
+
+test("invalid frames do not mask the other failures: RUN_ERROR, missing RUN_FINISHED, HTTP status", async () => {
+  await assert.rejects(
+    agentWith(
+      scripted([frame({ type: "RUN_ERROR", message: "Model failed" }), "data: oops\n\n"]),
+    ).run(),
+    /^Error: Model failed$/,
+  );
+  await assert.rejects(
+    agentWith(scripted([frame({ type: "RUN_STARTED" }), "data: oops\n\n"])).run(),
+    /^Error: Connection interrupted$/,
+  );
+  const failing: Transport = async () => ({ status: 500, errorText: "data: oops" });
+  await assert.rejects(agentWith(failing).run(), /^Error: Request failed \(500\)$/);
+});
+
+test("Agent keeps counting invalid frames across runs and can run again", async () => {
+  const agent = agentWith(scripted(["data: nope\n\n", frame({ type: "RUN_FINISHED" })]));
+  await agent.run();
+  await agent.run();
+  assert.equal(agent.invalidEventCount, 2);
   assert.equal(agent.isRunning, false);
 });
 
-test("over a real HTTP stream, an invalid frame makes fetchTransport and Agent.run reject", async () => {
+test("over a real HTTP stream with fetchTransport, an invalid event is ignored and the run completes", async () => {
   const server = createServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
-    response.write(frame({ type: "RUN_STARTED", threadId: "t", runId: "r" }));
-    setTimeout(() => response.end("data: {broken\n\n"), 10);
+    // One write holds a valid, an invalid and a valid frame; the invalid one also straddles writes.
+    response.write(
+      `${frame({ type: "RUN_STARTED" })}${text("Hel", true)}data: {broken\n\n${text("lo")}`,
+    );
+    setTimeout(() => {
+      response.write("data: {half");
+      setTimeout(() => {
+        response.write(` of json\n\n${text("!")}`);
+        response.end(frame({ type: "RUN_FINISHED" }));
+      }, 10);
+    }, 10);
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const address = server.address();
     assert.ok(address && typeof address !== "string");
-    const agent = agentWith(fetchTransport, `http://127.0.0.1:${address.port}/run`);
-    await assert.rejects(agent.run(), SyntaxError);
+    const bad: string[] = [];
+    const agent = agentWith(fetchTransport, {
+      url: `http://127.0.0.1:${address.port}/run`,
+      onInvalidEvent: (_error, data) => bad.push(data),
+    });
+    await agent.run();
+    assert.deepEqual(agent.messages as Message[], [
+      { id: "a", role: "assistant", content: "Hello!" },
+    ]);
+    assert.deepEqual(bad, ["{broken", "{half of json"]);
     assert.equal(agent.isRunning, false);
   } finally {
     server.closeAllConnections();

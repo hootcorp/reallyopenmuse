@@ -369,3 +369,32 @@ test("Agent.run over xhrTransport: a stream that ends without RUN_FINISHED is in
   fake.finish(frame({ type: "RUN_STARTED" }));
   await assert.rejects(run, /^Error: Connection interrupted$/);
 });
+
+test("Agent.run over xhrTransport ignores an invalid event and finishes with the right messages", async (t) => {
+  const xhr = installXhr(t);
+  const bad: string[] = [];
+  const agent = new Agent({
+    url: "https://host.test/api/agui/run",
+    threadId: "thread-1",
+    headers: () => ({}),
+    transport: xhrTransport,
+    onInvalidEvent: (_error, data) => bad.push(data),
+  });
+  const running = agent.run();
+  const fake = xhr();
+  const chunk = (delta: string, role?: string) =>
+    frame({ type: "TEXT_MESSAGE_CHUNK", messageId: "a", delta, ...(role ? { role } : {}) });
+  fake.head(200);
+  // Valid, invalid and valid frames in one progress event; a second invalid one split across two.
+  fake.progress(`${chunk("Hel", "assistant")}data: {broken\n\n${chunk("lo")}data: {half`);
+  assert.equal((agent.messages[0] as { content: string }).content, "Hello");
+  fake.progress(` of json\n\n${chunk("!")}`);
+  fake.finish(frame({ type: "RUN_FINISHED" }));
+  await running; // resolves: the xhr was not aborted by the bad frames
+  assert.equal(fake.aborted, 0);
+  assert.deepEqual(agent.messages as Message[], [
+    { id: "a", role: "assistant", content: "Hello!" },
+  ]);
+  assert.deepEqual(bad, ["{broken", "{half of json"]);
+  assert.equal(agent.isRunning, false);
+});

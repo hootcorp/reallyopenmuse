@@ -10,6 +10,8 @@ export type AgentOptions = {
   headers: () => Record<string, string>;
   context?: () => AgentContext[];
   transport?: Transport;
+  /** Called for each streamed frame that is not valid JSON; the frame is skipped, the run goes on. */
+  onInvalidEvent?: (error: unknown, data: string) => void;
 };
 
 /**
@@ -23,6 +25,7 @@ export class Agent {
   private version = 0;
   private readonly listeners = new Set<() => void>();
   private controller?: AbortController;
+  private invalidEvents = 0;
   constructor(private readonly options: AgentOptions) {}
   get threadId() {
     return this.options.threadId;
@@ -32,6 +35,10 @@ export class Agent {
   }
   get isRunning() {
     return this.running;
+  }
+  /** How many streamed frames this agent skipped so far because they were not valid JSON. */
+  get invalidEventCount() {
+    return this.invalidEvents;
   }
   /** Changes whenever the messages or the running state change. */
   getSnapshot = () => this.version;
@@ -67,7 +74,10 @@ export class Agent {
     this.controller = controller;
     this.running = true;
     this.emit();
-    const parser = new SseParser();
+    const parser = new SseParser((error, data) => {
+      this.invalidEvents++;
+      this.options.onInvalidEvent?.(error, data);
+    });
     let failure: Error | undefined;
     let finished = false;
     const handle = (event: AguiEvent) => {
