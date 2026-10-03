@@ -58,7 +58,7 @@ test("the latest complete panel only belongs to the active thread and current tu
   );
 });
 
-test("finds AG-UI function tool calls as rendered by CopilotKit", () => {
+test("finds AG-UI function tool calls as rendered by the chat client", () => {
   const messages = [
     { role: "user", content: "Help me get ready" },
     {

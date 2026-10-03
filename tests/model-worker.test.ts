@@ -11,7 +11,7 @@ import { browserFixture } from "./helpers/browser.ts";
 import { fixture as computerFixture } from "./helpers/computer.ts";
 import { modelFixture } from "./helpers/model.ts";
 
-test("CopilotKit model worker executes server tools and persists the confirmed outcome", async (t) => {
+test("model worker executes server tools and persists the confirmed outcome", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "openmuse-model-"));
   const db = await createStore();
   const calls: { name: string; arguments: object }[] = [

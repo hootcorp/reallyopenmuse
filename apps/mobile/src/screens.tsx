@@ -1229,14 +1229,6 @@ export function ConnectionsScreen({ query = "" }: { query?: string }) {
       connected: w.connections.some((c) => c.id === "browser" && c.status === "connected"),
       group: "browser",
     },
-    {
-      id: "openbot",
-      name: "OpenBot",
-      icon: Sparkles,
-      color: "#6866A6",
-      connected: false,
-      group: "openbot",
-    },
   ].filter((row) => `${row.name} ${row.group}`.toLowerCase().includes(query.toLowerCase()));
   return (
     <View style={{ gap: 22 }}>
@@ -1308,68 +1300,55 @@ export function ConnectionsScreen({ query = "" }: { query?: string }) {
       {!rows.length && <Text style={s.muted}>No matching connectors.</Text>}
       {selected && (
         <Sheet
-          title={selected === "google" ? "Google connections" : "OpenBot"}
-          subtitle={selected === "google" ? google?.account : "A computer for your agent"}
+          title="Google connections"
+          subtitle={google?.account}
           onClose={() => setSelected(undefined)}
         >
-          {selected === "google" ? (
-            <View style={{ gap: 18 }}>
-              <Text style={s.muted}>
-                Bring Gmail and Google Calendar into your conversations. Choose read access, then
-                enable sending and editing when you need it.
-              </Text>
-              <View style={[s.row, { gap: 7, flexWrap: "wrap" }]}>
-                {google?.capabilities.map((cap) => (
-                  <Chip key={cap}>{capabilityLabel(cap)}</Chip>
-                ))}
-              </View>
-              <ErrorNotice error={error} />
-              <Button busy={busy} primary icon={Link2} onPress={() => void connect("read")}>
-                Connect Google
-              </Button>
-              <Button busy={busy} onPress={() => void connect("write")}>
-                Enable sending & editing
-              </Button>
-              {connected && (
-                <Button busy={busy} danger onPress={() => void disconnect()}>
-                  Disconnect Google
-                </Button>
-              )}
-              <SettingsLine
-                label="Environment"
-                value={w.mode === "sample" ? "Local · example data" : "Live workspace"}
-              />
-              <SettingsLine
-                label="Assistant"
-                value={
-                  w.runtime.provider === "sample"
-                    ? "Guided workflows"
-                    : w.runtime.configured
-                      ? "Model connected"
-                      : "Model not configured"
-                }
-              />
-              <SettingsLine label="Conversations" value="Saved in this workspace" />
-              <Button
-                small
-                icon={ArrowDownToLine}
-                onPress={() => void refresh().catch((e) => setError(String(e)))}
-              >
-                Refresh connections
-              </Button>
+          <View style={{ gap: 18 }}>
+            <Text style={s.muted}>
+              Bring Gmail and Google Calendar into your conversations. Choose read access, then
+              enable sending and editing when you need it.
+            </Text>
+            <View style={[s.row, { gap: 7, flexWrap: "wrap" }]}>
+              {google?.capabilities.map((cap) => (
+                <Chip key={cap}>{capabilityLabel(cap)}</Chip>
+              ))}
             </View>
-          ) : (
-            <View style={{ gap: 14 }}>
-              <Text style={s.text}>
-                The OpenBot adapter is available in this open-source project. A live OpenBot backend
-                has not been configured.
-              </Text>
-              <Text style={s.muted}>
-                Your current computer uses OpenMuse’s persistent Chromium worker. OpenBot
-                integration will expand the execution backend while keeping this interface.
-              </Text>
-            </View>
-          )}
+            <ErrorNotice error={error} />
+            <Button busy={busy} primary icon={Link2} onPress={() => void connect("read")}>
+              Connect Google
+            </Button>
+            <Button busy={busy} onPress={() => void connect("write")}>
+              Enable sending & editing
+            </Button>
+            {connected && (
+              <Button busy={busy} danger onPress={() => void disconnect()}>
+                Disconnect Google
+              </Button>
+            )}
+            <SettingsLine
+              label="Environment"
+              value={w.mode === "sample" ? "Local · example data" : "Live workspace"}
+            />
+            <SettingsLine
+              label="Assistant"
+              value={
+                w.runtime.provider === "sample"
+                  ? "Guided workflows"
+                  : w.runtime.configured
+                    ? "Model connected"
+                    : "Model not configured"
+              }
+            />
+            <SettingsLine label="Conversations" value="Saved in this workspace" />
+            <Button
+              small
+              icon={ArrowDownToLine}
+              onPress={() => void refresh().catch((e) => setError(String(e)))}
+            >
+              Refresh connections
+            </Button>
+          </View>
         </Sheet>
       )}
     </View>

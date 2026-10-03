@@ -180,17 +180,9 @@ export interface Workspace {
   activity: ActivityEntry[];
   connections: Connection[];
   runtime: {
-    provider: "sample" | "model" | "openbot";
+    provider: "sample" | "model";
     configured: boolean;
-    openbotConfigured: boolean;
   };
-}
-
-/** Provider-independent boundary: OpenBot/AG-UI runs never dictate presentation. */
-export interface ExecutionBackend {
-  readonly kind: "standalone" | "openbot";
-  readonly capabilities: readonly string[];
-  health(): Promise<{ available: boolean; detail: string }>;
 }
 
 export type { ComputerCommand, ComputerDirectory, ComputerSnapshot } from "./computer.ts";

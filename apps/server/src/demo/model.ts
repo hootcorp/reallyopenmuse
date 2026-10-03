@@ -22,7 +22,7 @@ const pageSchema = z.object({
 function targetUrl(prompt: string): string | undefined {
   if (/monterey|aquarium/i.test(prompt))
     return "https://www.montereybayaquarium.org/visit/exhibits";
-  if (/copilotkit\.ai/i.test(prompt)) return "https://copilotkit.ai";
+  if (/example\.com/i.test(prompt)) return "https://example.com";
   if (/hacker\s*news|news\.ycombinator\.com|cool stuff/i.test(prompt))
     return "https://news.ycombinator.com";
   return undefined;
@@ -68,9 +68,9 @@ function summarizePage(message: ChatMessage): FixtureResponse {
     introduction = "Exhibits from the aquarium’s own guide:";
   } else {
     excerpts = lines
-      .filter((line) => line.length >= 45 && /agent|copilotkit|ag.ui|framework/i.test(line))
+      .filter((line) => line.length >= 45 && /agent|ag.ui|framework/i.test(line))
       .slice(0, 3);
-    introduction = "From CopilotKit’s current page:";
+    introduction = "From the page you asked about:";
   }
   if (!excerpts.length) {
     excerpts = lines.filter((line) => line.length >= 30).slice(0, 3);
@@ -569,7 +569,7 @@ export function demoResponse(request: ChatCompletionRequest): FixtureResponse {
   if (!url)
     return {
       content:
-        "Try “Find cool stuff on Hacker News”, “Summarize copilotkit.ai”, “Check my emails for the school trip”, or “Research Monterey Bay Aquarium”.",
+        "Try “Find cool stuff on Hacker News”, “Summarize example.com”, “Check my emails for the school trip”, or “Research Monterey Bay Aquarium”.",
     };
 
   // Only the latest turn can satisfy this request; older browser reads cannot suppress a new visit.
@@ -595,7 +595,7 @@ export function demoResponse(request: ChatCompletionRequest): FixtureResponse {
       ? "I’ll open Hacker News and read the front page."
       : url.includes("montereybayaquarium")
         ? "I’ll research the exhibits on the aquarium’s own website."
-        : "I’ll open CopilotKit and read the page.",
+        : "I’ll open the page and read it.",
     toolCalls: [
       {
         id: `call_openmuse_demo_browse_${randomUUID()}`,
