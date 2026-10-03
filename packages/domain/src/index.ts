@@ -183,7 +183,6 @@ export interface Workspace {
     provider: "sample" | "model" | "openbot";
     configured: boolean;
     openbotConfigured: boolean;
-    richThreads?: boolean;
   };
 }
 

@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { aquariumFixture, schoolTripFixture } from "./jev-fixture.ts";
 import {
   type ChatCompletionRequest,
   type ChatMessage,
   type FixtureResponse,
   getTextContent,
-  LLMock,
-} from "@copilotkit/aimock";
-import { z } from "zod";
-import { aquariumFixture, schoolTripFixture } from "./jev-fixture.ts";
+  MockLLM,
+} from "./mock-llm.ts";
 
 export const demoModel = "openai/openmuse-browser-demo";
 
@@ -613,15 +613,10 @@ export function createDemoModel(
   const firstByteDelay = options.firstByteDelay ?? options.latency ?? 1500;
   if (![latency, firstByteDelay].every((value) => Number.isFinite(value) && value >= 0))
     throw new Error("Demo model delays must be finite nonnegative milliseconds");
-  return new LLMock({
+  return new MockLLM({
     host: "127.0.0.1",
     port: options.port ?? 0,
     latency,
     chunkSize: 14,
-    strict: true,
-    logLevel: "silent",
-    journalMaxEntries: 100,
-  }).on({ model: "openmuse-browser-demo" }, demoResponse, {
-    streamingProfile: { ttft: firstByteDelay },
-  });
+  }).on({ model: "openmuse-browser-demo" }, demoResponse, { firstByteDelay });
 }

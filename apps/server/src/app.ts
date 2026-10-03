@@ -1,24 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { MessageSchema } from "@ag-ui/core";
-import { CopilotKitIntelligence } from "@copilotkit/runtime/v2";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import { emailDraftSchema, proposalSchema } from "../../../packages/domain/src/index.ts";
 import { ActionService } from "./actions.ts";
-import { agentConfigured, makeRuntime } from "./agent.ts";
+import { agentConfigured, agentRuntime } from "./agent.ts";
 import { createAuth } from "./auth.ts";
 import { BrowserService } from "./browser.ts";
 import { ComputerService, type DockerRunner } from "./computer.ts";
 import { computerRoutes } from "./computer-routes.ts";
-import { assertApiDeploymentConfig, type Config } from "./config.ts";
+import type { Config } from "./config.ts";
 import type { Store } from "./db.ts";
 import { agentRoutes } from "./engine/routes.ts";
 import { AgentService } from "./engine/service.ts";
 import { AppError } from "./errors.ts";
 import { Files } from "./files.ts";
 import { GoogleAuth } from "./google-auth.ts";
+import { ThreadService, threadPatchSchema } from "./threads.ts";
 import { WorkspaceService } from "./workspace.ts";
 
 export async function createApp(
@@ -26,7 +25,6 @@ export async function createApp(
   config: Config,
   options: { docker?: DockerRunner } = {},
 ) {
-  assertApiDeploymentConfig(config);
   const auth = await createAuth(db, config),
     files = new Files(db, config, auth),
     google = new GoogleAuth(db, config),
@@ -41,8 +39,7 @@ export async function createApp(
   const browser = new BrowserService(db, config, auth, files);
   const computer = new ComputerService(db, config, options.docker);
   const agent = new AgentService(db, config, workspace, files, actions, browser, computer);
-  const intelligence = new CopilotKitIntelligence({ apiKey: config.intelligenceApiKey });
-  const runtime = makeRuntime(config, agent, auth, intelligence);
+  const threads = new ThreadService(db);
   const app = new Hono<{ Variables: { owner: string } }>();
   const origins = new Set([...config.allowedOrigins, new URL(config.publicUrl).origin]);
   app.use("*", async (c, next) => {
@@ -202,37 +199,49 @@ export async function createApp(
       201,
     );
   });
-  app.get("/api/main-thread", async (c) => {
-    const owner = c.get("owner");
-    await db.insertIfAbsent(owner, "conversation-settings", {
-      id: "main",
-      threadId: randomUUID(),
-      existing: false,
-    });
-    const main = await db.get<{ threadId: string }>(owner, "conversation-settings", "main");
-    if (!main) throw new AppError("Main conversation could not be loaded", 503);
-    try {
-      await intelligence.getOrCreateThread({
-        threadId: main.threadId,
-        userId: owner,
-        agentId: "default",
-      });
-    } catch {
-      throw new AppError(
-        "Main conversation is unavailable. Check the Rich Threads connection and try again.",
-        502,
-      );
-    }
-    return c.json({ threadId: main.threadId, existing: true });
+  app.get("/api/main-thread", async (c) => c.json(await threads.main(c.get("owner"))));
+  app.get("/api/threads", async (c) => {
+    const query = z
+      .object({
+        includeArchived: z.enum(["true", "false"]).default("false"),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+        cursor: z.string().max(20).optional(),
+      })
+      .parse(c.req.query());
+    return c.json(
+      await threads.list(c.get("owner"), {
+        includeArchived: query.includeArchived === "true",
+        limit: query.limit,
+        cursor: query.cursor,
+      }),
+    );
   });
-  app.get("/api/conversation", async (c) =>
-    c.json((await db.get(c.get("owner"), "conversations", "default")) ?? { messages: [] }),
+  app.get("/api/threads/:id/messages", async (c) =>
+    c.json(await threads.messages(c.get("owner"), c.req.param("id"))),
   );
+  app.put("/api/threads/:id/messages", async (c) => {
+    const body = z.object({ messages: z.array(z.unknown()) }).parse(await c.req.json());
+    await threads.save(c.get("owner"), c.req.param("id"), body.messages);
+    return c.json({ ok: true });
+  });
+  app.patch("/api/threads/:id", async (c) =>
+    c.json(
+      await threads.update(
+        c.get("owner"),
+        c.req.param("id"),
+        threadPatchSchema.parse(await c.req.json()),
+      ),
+    ),
+  );
+  // The main chat's saved messages; the same data as /api/threads/<main thread>/messages.
+  app.get("/api/conversation", async (c) => {
+    const owner = c.get("owner");
+    return c.json(await threads.messages(owner, (await threads.main(owner)).threadId));
+  });
   app.put("/api/conversation", async (c) => {
+    const owner = c.get("owner");
     const body = await c.req.json();
-    const messages = z.array(z.unknown()).max(1000).parse(body.messages);
-    for (const message of messages) MessageSchema.parse(message);
-    await db.put(c.get("owner"), "conversations", { id: "default", messages });
+    await threads.save(owner, (await threads.main(owner)).threadId, body.messages);
     return c.json({ ok: true });
   });
   app.post("/api/files", async (c) => {
@@ -326,24 +335,7 @@ export async function createApp(
     await browser.input(c.get("owner"), c.req.param("id"), await c.req.json());
     return c.json({ ok: true });
   });
-  app.all("/api/copilotkit/*", async (c) => {
-    if (!agentConfigured(config))
-      throw new AppError(
-        "Configure a model and provider API key, or a valid AG-UI endpoint, to start chat",
-        503,
-      );
-    const response = await runtime.fetch(c.req.raw);
-    // Runtime 1.70 emits SSE strings; a WHATWG Response body requires byte chunks.
-    const encoder = new TextEncoder();
-    const body = response.body?.pipeThrough(
-      new TransformStream({
-        transform(chunk, controller) {
-          controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : chunk);
-        },
-      }),
-    );
-    return new Response(body, { status: response.status, headers: response.headers });
-  });
+  app.route("/api/agui", agentRuntime(config, agent));
   app.get("/", (c) =>
     c.json({ name: "OpenMuse", app: "http://localhost:8081", health: "/api/health" }),
   );

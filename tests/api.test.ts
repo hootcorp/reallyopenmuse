@@ -29,7 +29,6 @@ before(async () => {
     publicUrl: "http://localhost:8787",
     dataDir: directory,
     agentBackend: "sample",
-    intelligenceApiKey: "test-project-key-never-sent",
     googleRedirectUri: "http://localhost:8787/api/google/callback",
     allowedOrigins: ["http://localhost:8081"],
   };
@@ -178,7 +177,7 @@ function sampleRun(threadId: string, runId: string, messageId: string, content: 
 }
 
 test("sample agent streams actual AG-UI events without a model key", async () => {
-  const info = await app.request("/api/copilotkit/info", { headers: headers() });
+  const info = await app.request("/api/agui/info", { headers: headers() });
   assert.equal(info.status, 200);
   const stream = JSON.stringify(
     await lastValueFrom(
