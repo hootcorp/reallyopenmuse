@@ -2,7 +2,6 @@ import "../config.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { AbstractAgent } from "@ag-ui/client";
 import { type BaseEvent, EventType, type RunAgentInput } from "@ag-ui/core";
-import { defineTool } from "@copilotkit/runtime/v2";
 import { Observable } from "rxjs";
 import { z } from "zod";
 import {
@@ -18,6 +17,7 @@ import { JevService } from "../jev/service.ts";
 import { presentChoicesTool } from "../jev/tools.ts";
 import type { AgentService } from "./service.ts";
 import { tanstackAgent } from "./tanstack-agent.ts";
+import { defineTool } from "./tool.ts";
 
 export class ConversationAgent extends AbstractAgent {
   constructor(

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EventType, type RunAgentInput } from "@ag-ui/core";
-import { type BuiltInAgent, defineTool } from "@copilotkit/runtime/v2";
 import { z } from "zod";
 import { MODEL_MAX_RETRIES } from "../apps/server/src/config.ts";
-import { tanstackAgent } from "../apps/server/src/engine/tanstack-agent.ts";
+import { type TanStackAgent, tanstackAgent } from "../apps/server/src/engine/tanstack-agent.ts";
+import { defineTool } from "../apps/server/src/engine/tool.ts";
 import { modelFixture } from "./helpers/model.ts";
 
-const run = (agent: BuiltInAgent) => {
+const run = (agent: TanStackAgent) => {
   const input: RunAgentInput = {
     threadId: "retry-fixture",
     runId: "retry-fixture-run",

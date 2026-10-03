@@ -4,10 +4,10 @@ import { test } from "node:test";
 import { AbstractAgent } from "@ag-ui/client";
 import type { RunAgentInput } from "@ag-ui/core";
 import type { ChatCompletionRequest, ChatMessage } from "@copilotkit/aimock";
-import { defineTool } from "@copilotkit/runtime/v2";
 import { z } from "zod";
 import { createDemoModel, demoModel, demoResponse } from "../apps/server/src/demo/model.ts";
 import { tanstackAgent } from "../apps/server/src/engine/tanstack-agent.ts";
+import { defineTool } from "../apps/server/src/engine/tool.ts";
 
 const browseTool = {
   type: "function" as const,

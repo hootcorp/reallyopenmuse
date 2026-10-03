@@ -1,6 +1,6 @@
-import { defineTool } from "@copilotkit/runtime/v2";
 import { z } from "zod";
 import { type JevToolResult, jevOptionSchema } from "../../../../packages/domain/src/jev.ts";
+import { defineTool } from "../engine/tool.ts";
 import type { JevService } from "./service.ts";
 
 const optionInput = jevOptionSchema
