@@ -168,7 +168,11 @@ async function* convertStream(stream: AsyncIterable<unknown>, signal: AbortSigna
   const ended = new Set<string>();
   for await (const chunk of stream) {
     if (signal.aborted) break;
-    const raw = chunk as Record<string, any>;
+    const raw = chunk as Record<string, unknown> & {
+      toolCallId: string;
+      toolCallName: string;
+      delta: string;
+    };
     switch (raw.type) {
       case "RUN_ERROR":
         throw new Error(typeof raw.message === "string" ? raw.message : "Model run error");

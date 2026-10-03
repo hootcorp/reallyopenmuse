@@ -117,7 +117,10 @@ async function sseServer(
     threadId: string;
   }) => string[] | number,
 ) {
-  const requests: { headers: Record<string, unknown>; body: any }[] = [];
+  const requests: {
+    headers: Record<string, unknown>;
+    body: { messages: Message[]; context: unknown[]; threadId: string };
+  }[] = [];
   const server = createServer(async (request, response) => {
     let raw = "";
     for await (const chunk of request) raw += chunk;

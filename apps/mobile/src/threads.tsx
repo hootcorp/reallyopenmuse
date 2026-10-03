@@ -1,4 +1,3 @@
-import { useThreads } from "@copilotkit/react-native/headless";
 import {
   Archive,
   CalendarDays,
@@ -9,7 +8,15 @@ import {
   RefreshCw,
   Settings2,
 } from "lucide-react-native";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Button, colors, ErrorNotice, Field, LinkRow, Sheet, s } from "./ui";
 import { useWorkspace } from "./workspace";
@@ -23,7 +30,6 @@ function newThreadId() {
 }
 export type Selection = { id: string; existing: boolean };
 const ThreadContext = createContext<{
-  enabled: boolean;
   selection: Selection;
   visited: Selection[];
   mainId: string;
@@ -35,17 +41,15 @@ const ThreadContext = createContext<{
   claimPrompt: (id: number) => boolean;
 } | null>(null);
 export function ThreadsProvider({ children }: { children: ReactNode }) {
-  const { workspace, navigate, api } = useWorkspace();
+  const { navigate, api } = useWorkspace();
   const handledPrompt = useRef(0);
-  const enabled = workspace.runtime.richThreads === true;
   const [selection, setSelection] = useState<Selection>({ id: "local", existing: false });
   const [visited, setVisited] = useState<Selection[]>([]);
   const [mainId, setMainId] = useState("local");
-  const [loading, setLoading] = useState(enabled);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (!enabled) return;
     let active = true;
     setLoading(true);
     setError("");
@@ -65,7 +69,7 @@ export function ThreadsProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [api, enabled, attempt]);
+  }, [api, attempt]);
   function select(next: Selection) {
     setSelection(next);
     setVisited((items) => (items.some((item) => item.id === next.id) ? items : [...items, next]));
@@ -79,7 +83,6 @@ export function ThreadsProvider({ children }: { children: ReactNode }) {
           handledPrompt.current = id;
           return true;
         },
-        enabled,
         mainId,
         visited,
         loading,
@@ -94,6 +97,89 @@ export function ThreadsProvider({ children }: { children: ReactNode }) {
     </ThreadContext.Provider>
   );
 }
+type SavedThread = {
+  id: string;
+  name: string | null;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+type ThreadPage = { threads: SavedThread[]; nextCursor: string | null };
+const asError = (e: unknown) => (e instanceof Error ? e : new Error(String(e)));
+
+/** The saved side chats, newest first, with paging and rename/archive on the server. */
+function useThreadList() {
+  const { api } = useWorkspace();
+  const [threads, setThreads] = useState<SavedThread[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error>();
+  const [isFetchingMoreThreads, setFetchingMore] = useState(false);
+  const [fetchMoreError, setFetchMoreError] = useState<Error>();
+  const [isMutating, setMutating] = useState(false);
+  const refetchThreads = useCallback(async () => {
+    setIsLoading(true);
+    setError(undefined);
+    try {
+      const page = await api.request<ThreadPage>("/api/threads?includeArchived=true&limit=20");
+      setThreads(page.threads);
+      setCursor(page.nextCursor);
+    } catch (e) {
+      setError(asError(e));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [api]);
+  useEffect(() => {
+    void refetchThreads();
+  }, [refetchThreads]);
+  async function fetchMoreThreads() {
+    if (!cursor) return;
+    setFetchingMore(true);
+    setFetchMoreError(undefined);
+    try {
+      const page = await api.request<ThreadPage>(
+        `/api/threads?includeArchived=true&limit=20&cursor=${encodeURIComponent(cursor)}`,
+      );
+      setThreads((current) => [
+        ...current,
+        ...page.threads.filter((thread) => !current.some((known) => known.id === thread.id)),
+      ]);
+      setCursor(page.nextCursor);
+    } catch (e) {
+      setFetchMoreError(asError(e));
+    } finally {
+      setFetchingMore(false);
+    }
+  }
+  async function update(id: string, patch: { name?: string; archived?: boolean }) {
+    setMutating(true);
+    try {
+      const saved = await api.request<SavedThread>(
+        `/api/threads/${encodeURIComponent(id)}`,
+        patch,
+        "PATCH",
+      );
+      setThreads((current) => current.map((thread) => (thread.id === id ? saved : thread)));
+    } finally {
+      setMutating(false);
+    }
+  }
+  return {
+    threads,
+    isLoading,
+    error,
+    refetchThreads,
+    hasMoreThreads: cursor !== null,
+    fetchMoreThreads,
+    isFetchingMoreThreads,
+    fetchMoreError,
+    isMutating,
+    renameThread: (id: string, name: string) => update(id, { name }),
+    archiveThread: (id: string) => update(id, { archived: true }),
+    unarchiveThread: (id: string) => update(id, { archived: false }),
+  };
+}
 export function useMuseThread() {
   const context = useContext(ThreadContext);
   if (!context) throw new Error("Threads provider is unavailable");
@@ -101,7 +187,6 @@ export function useMuseThread() {
 }
 export function ThreadsSheet({ onClose }: { onClose: () => void }) {
   const {
-    enabled,
     selection,
     visited,
     mainId,
@@ -112,7 +197,7 @@ export function ThreadsSheet({ onClose }: { onClose: () => void }) {
     start,
   } = useMuseThread();
   const { workspace, open, navigate, refresh } = useWorkspace();
-  const threads = useThreads({ agentId: "default", enabled, includeArchived: true, limit: 20 });
+  const threads = useThreadList();
   const [editing, setEditing] = useState<string>();
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -137,7 +222,7 @@ export function ThreadsSheet({ onClose }: { onClose: () => void }) {
       onClose={onClose}
     >
       <View style={{ gap: 14 }}>
-        {enabled && loading ? (
+        {loading ? (
           <>
             <ErrorNotice error={mainError} />
             {mainError ? (
@@ -146,7 +231,7 @@ export function ThreadsSheet({ onClose }: { onClose: () => void }) {
               <ActivityIndicator color={colors.blueDark} />
             )}
           </>
-        ) : enabled ? (
+        ) : (
           <>
             <LinkRow
               icon={MessageCircle}
@@ -279,21 +364,6 @@ export function ThreadsSheet({ onClose }: { onClose: () => void }) {
             )}
             <Text style={s.small}>
               Side chats keep their own conversation context. Your agent’s saved memory is shared.
-            </Text>
-          </>
-        ) : (
-          <>
-            <LinkRow
-              icon={MessageCircle}
-              title="Main chat"
-              detail="Saved in this workspace"
-              onPress={() => {
-                navigate("chat");
-                onClose();
-              }}
-            />
-            <Text style={s.muted}>
-              Your conversation is saved in this workspace. You can manage connections in Apps.
             </Text>
           </>
         )}

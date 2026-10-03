@@ -1349,10 +1349,7 @@ export function ConnectionsScreen({ query = "" }: { query?: string }) {
                       : "Model not configured"
                 }
               />
-              <SettingsLine
-                label="Rich Threads"
-                value={w.runtime.richThreads ? "CopilotKit Intelligence" : "Not connected"}
-              />
+              <SettingsLine label="Conversations" value="Saved in this workspace" />
               <Button
                 small
                 icon={ArrowDownToLine}
