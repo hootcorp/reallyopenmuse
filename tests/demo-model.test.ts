@@ -459,7 +459,7 @@ test("demo reports missing or failed browser evidence without inventing a summar
   assert.ok(!("toolCalls" in reply));
 });
 
-test("AI Mock drives the real TanStack BuiltInAgent through two browser tool rounds", async () => {
+test("The local mock model drives the real TanStackAgent through two browser tool rounds", async () => {
   const previousBase = process.env.OPENAI_BASE_URL;
   const previousKey = process.env.OPENAI_API_KEY;
   const mock = createDemoModel({ latency: 0 });
@@ -491,7 +491,7 @@ test("AI Mock drives the real TanStack BuiltInAgent through two browser tool rou
       }),
     ],
   };
-  // ConversationAgent also creates a TanStack BuiltInAgent per turn and returns its raw run observable.
+  // ConversationAgent also creates a TanStackAgent per turn and returns its raw run observable.
   class DemoAgent extends AbstractAgent {
     run(input: RunAgentInput) {
       return tanstackAgent(options).run(input);

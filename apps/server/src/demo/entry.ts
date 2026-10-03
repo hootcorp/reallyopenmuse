@@ -81,7 +81,7 @@ const api = spawn(
       ...(jevMode === "live" && process.env.JEV_MODEL ? { JEV_MODEL: process.env.JEV_MODEL } : {}),
       AGENT_BACKEND: "model",
       MODEL: demoModel,
-      OPENAI_API_KEY: "local-aimock-demo-only",
+      OPENAI_API_KEY: "local-mock-demo-only",
       OPENAI_BASE_URL: `${mock.url}/v1`,
       PORT: String(port),
       HOST: "127.0.0.1",
@@ -98,7 +98,7 @@ const api = spawn(
   },
 );
 console.log(
-  `OpenMuse recording demo: AI Mock scripts the agent; ${jevMode === "live" ? "Jev decisions call TypeSafe" : "Jev decisions are scripted"}; browser visits use the real worker.`,
+  `OpenMuse recording demo: the local mock model scripts the agent; ${jevMode === "live" ? "Jev decisions call TypeSafe" : "Jev decisions are scripted"}; browser visits use the real worker.`,
 );
 console.log(`Demo API: ${publicUrl}; browser worker: ${workerUrl}`);
 console.log(`Isolated demo data: ${dataDir}`);

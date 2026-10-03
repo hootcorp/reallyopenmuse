@@ -4,20 +4,20 @@
 
 [![Live Jev reranks the aquarium exhibits in OpenMuse](../../assets/demos/2026-09-23/jev-live-web.png)](../../assets/demos/2026-09-23/jev-live-web.mp4)
 
-The live recording calls TypeSafe Jev for each clarification and comparison decision, visibly labeled `Live Jev · model decisions` in the cards. AI Mock scripts the agent's conversation steps, while OpenMuse runs its normal mailbox, real browser worker, and `present_choices` tool. The mailbox is a fictional local Lincoln Middle School sample. The live comparison details are excerpts of the public aquarium pages read during that turn; Jev decides whether to show the agent's prepared cards and ranks those candidates. The revised hands-on preference moves Rocky Shore to first place in this recorded run.
+The live recording calls TypeSafe Jev for each clarification and comparison decision, visibly labeled `Live Jev · model decisions` in the cards. The local mock model scripts the agent's conversation steps, while OpenMuse runs its normal mailbox, real browser worker, and `present_choices` tool. The mailbox is a fictional local Lincoln Middle School sample. The live comparison details are excerpts of the public aquarium pages read during that turn; Jev decides whether to show the agent's prepared cards and ranks those candidates. The revised hands-on preference moves Rocky Shore to first place in this recorded run.
 
 For a repeatable, TypeSafe-key-free walkthrough, [watch the 81-second scripted sample](../../assets/demos/2026-09-23/jev-web.mp4). Its cards are labeled `Sample · scripted decisions`; it does not make a live Jev call.
 
 ## Run
 
-From the repository root, install dependencies and configure a server-only CopilotKit Intelligence project key in the private `.env` as described in [Quick start](../../README.md#quick-start). Both sample and live modes require that key for Rich Threads. The sample needs no TypeSafe key or general model provider key.
+From the repository root, install dependencies as described in [Quick start](../../README.md#quick-start). The sample needs no TypeSafe key or general model provider key.
 
 ```sh
 pnpm --dir apps/worker exec playwright install chromium
 pnpm dev:demo
 ```
 
-The isolated launcher sets `JEV_MODE=sample`, starts AI Mock and the normal API on `127.0.0.1:8788`, and starts a real browser worker on `127.0.0.1:8791`. It forwards only the Intelligence key from the private configuration, not Google or model-provider credentials. Demo data stays under ignored `artifacts/demo/`.
+The isolated launcher sets `JEV_MODE=sample`, starts the local mock model and the normal API on `127.0.0.1:8788`, and starts a real browser worker on `127.0.0.1:8791`. It forwards no Google or model-provider credentials. Demo data stays under ignored `artifacts/demo/`.
 
 To exercise **real Jev decisions** with the same scripted agent and real browser, provide a server-side `TYPESAFE_API_KEY` through your secret manager and start `DEMO_JEV_MODE=live pnpm dev:demo` instead. The launcher forwards that key only to the API process. A resulting card is labeled `Live Jev · model decisions`; live comparison excerpts are taken directly from the pages read in that turn. The scripted agent still supplies the trip scenario and candidate set, while the TypeSafe service decides whether to show the prepared cards and ranks candidates. Live Jev may choose an ordinary agent response, so the exact card sequence is not guaranteed.
 
@@ -49,7 +49,7 @@ The school, sender, recipient, message, and permission-slip document are fiction
 | Open Sea | Sea turtles, sardines, and tuna at a 90-foot viewing window | [Open Sea](https://www.montereybayaquarium.org/visit/exhibits/open-sea/) |
 | Rocky Shore | Bat-ray touch pool | [Rocky Shore](https://www.montereybayaquarium.org/visit/exhibits/rocky-shore) |
 
-For a fully live, non-scripted agent, run the ordinary API with `JEV_MODE=live`, a server-side `TYPESAFE_API_KEY`, and the required `CPK_INTELLIGENCE_API_KEY`. Configure a real model and browser worker separately. The isolated `pnpm dev:demo` command defaults to the labeled sample mode and does not forward a TypeSafe key unless `DEMO_JEV_MODE=live` is set. A sample recording must not be presented as evidence that live Jev was called.
+For a fully live, non-scripted agent, run the ordinary API with `JEV_MODE=live`, and a server-side `TYPESAFE_API_KEY`. Configure a real model and browser worker separately. The isolated `pnpm dev:demo` command defaults to the labeled sample mode and does not forward a TypeSafe key unless `DEMO_JEV_MODE=live` is set. A sample recording must not be presented as evidence that live Jev was called.
 
 ## What live mode sends to TypeSafe
 
